@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Classement - Marble Race</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="leaderboard" style="overflow-y:auto; align-items:flex-start; flex-direction:column;">
+
+<div class="lb-container">
+  <div class="lb-header">
+    <h1>🏆 Classement</h1>
+    <div class="live-badge">🔴 LIVE</div>
+  </div>
+
+  <div class="lb-stats">
+    <div class="stat">
+      <div class="stat-value" id="stat-total">—</div>
+      <div class="stat-label">Billes totales</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="stat-finished">—</div>
+      <div class="stat-label">Arrivées</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="stat-remaining">—</div>
+      <div class="stat-label">En course</div>
+    </div>
+  </div>
+
+  <div id="lb-list">
+    <div class="lb-empty">En attente du début de la course…</div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="leaderboard.js"></script>
+</body>
+</html>
