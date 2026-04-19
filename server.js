@@ -12,6 +12,28 @@ const io = new Server(httpServer);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// Injecte le mot de passe admin dans la page (côté client)
+const ADMIN_PWD = process.env.ADMIN_PASSWORD || 'admin1234';
+app.get('/admin.html', (_req, res) => {
+  const fs = require('fs');
+  let html = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'), 'utf8');
+  html = html.replace('window.__ADMIN_PWD__', `"${ADMIN_PWD}"`);
+  res.send(html);
+});
+
+// Proxy avatar TikTok (évite les problèmes CORS)
+app.get('/api/avatar', async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).end();
+  try {
+    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 5000,
+      headers: { 'User-Agent': 'Mozilla/5.0' } });
+    res.set('Content-Type', resp.headers['content-type'] || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.send(resp.data);
+  } catch { res.status(404).end(); }
+});
+
 // =====================
 // State
 // =====================
