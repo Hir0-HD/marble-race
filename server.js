@@ -4,25 +4,79 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const axios = require('axios');
+const crypto = require('crypto');
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
-// Injecte le mot de passe admin dans la page (côté client)
 const ADMIN_PWD = process.env.ADMIN_PASSWORD || 'admin1234';
-app.get('/admin.html', (_req, res) => {
+const AUTH_TOKEN = crypto.randomBytes(24).toString('hex');
+
+function parseCookies(req) {
+  const cookies = {};
+  const header = req.headers.cookie;
+  if (header) header.split(';').forEach(c => {
+    const [k, ...v] = c.split('=');
+    cookies[k.trim()] = decodeURIComponent(v.join('='));
+  });
+  return cookies;
+}
+
+function requireAuth(req, res, next) {
+  const cookies = parseCookies(req);
+  if (cookies.mrace_auth === AUTH_TOKEN) return next();
+  res.redirect('/login?next=' + encodeURIComponent(req.path));
+}
+
+app.get('/login', (req, res) => {
+  const next = req.query.next || '/game';
+  res.send(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<title>Accès privé</title>
+<style>
+  body{background:#111;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+  form{display:flex;flex-direction:column;gap:12px;background:#1a1a1a;padding:32px;border-radius:12px}
+  h2{margin:0 0 8px;text-align:center}
+  input[type=password]{padding:10px;border-radius:6px;border:1px solid #444;background:#222;color:#fff;font-size:1rem}
+  button{padding:10px;border-radius:6px;border:none;background:#6c63ff;color:#fff;font-size:1rem;cursor:pointer}
+  button:hover{background:#574fd6}
+  .err{color:#ff6b6b;text-align:center;font-size:.9rem}
+</style></head><body>
+<form method="POST" action="/login">
+  <h2>🎱 Marble Race</h2>
+  ${req.query.err ? '<p class="err">Mot de passe incorrect</p>' : ''}
+  <input type="password" name="password" placeholder="Mot de passe" autofocus>
+  <input type="hidden" name="next" value="${next}">
+  <button type="submit">Entrer</button>
+</form></body></html>`);
+});
+
+app.post('/login', (req, res) => {
+  const { password, next } = req.body;
+  const dest = (next && next.startsWith('/')) ? next : '/game';
+  if (password === ADMIN_PWD) {
+    res.setHeader('Set-Cookie', `mrace_auth=${AUTH_TOKEN}; Path=/; HttpOnly; SameSite=Strict`);
+    return res.redirect(dest);
+  }
+  res.redirect('/login?err=1&next=' + encodeURIComponent(dest));
+});
+
+// Bloque l'accès direct à index.html
+app.get('/index.html', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// Jeu et admin protégés
+app.get('/game', requireAuth, (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+app.get('/admin.html', requireAuth, (_req, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'), 'utf8');
   html = html.replace('window.__ADMIN_PWD__', `"${ADMIN_PWD}"`);
   res.send(html);
 });
 
-// Jeu réservé à l'admin (URL privée)
-app.get('/game', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-// Public → leaderboard uniquement
 app.get('/', (_req, res) => res.redirect('/leaderboard.html'));
 
 app.use(express.static(path.join(__dirname, 'public')));
