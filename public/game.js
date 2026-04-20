@@ -43,7 +43,7 @@ const config = {
   physics: {
     default: 'matter',
     matter: {
-      gravity: { y: 0.8 },
+      gravity: { y: 1.5 },
       debug: false,
       positionIterations: 12,
       velocityIterations: 8,
@@ -247,7 +247,7 @@ async function doSpawn(follower) {
   }
 
   const body = _scene.matter.add.circle(x, SPAWN_Y, MARBLE_R, {
-    restitution: 0.3, friction: 0.05, frictionAir: 0.010,
+    restitution: 0.5, friction: 0.02, frictionAir: 0.004,
     frictionStatic: 0, density: 0.002, sleepThreshold: 600,
     label: `m:${follower.id}`,
   });
@@ -317,73 +317,102 @@ function getLeader() {
 function buildTrack(scene) {
   const gfx = scene.add.graphics().setDepth(1);
 
-  // Fond alterné
   for (let y = 0; y < WORLD_H; y += 1000) {
     gfx.fillStyle(y % 2000 === 0 ? 0x0d0d1a : 0x111126);
     gfx.fillRect(0, y, W, 1000);
   }
 
-  // Murs latéraux
   gfx.fillStyle(0x1e1e4a);
   gfx.fillRect(0, 0, 18, WORLD_H);
   gfx.fillRect(W - 18, 0, 18, WORLD_H);
   scene.matter.add.rectangle(9, WORLD_H / 2, 18, WORLD_H, { isStatic: true });
   scene.matter.add.rectangle(W - 9, WORLD_H / 2, 18, WORLD_H, { isStatic: true });
 
-  // Entonnoir de départ — regroupe les billes
+  // Entonnoir départ
   addFunnel(scene, gfx, SPAWN_Y + 160, 460, 90);
 
-  // Zigzag : rampes alternées gauche/droite avec rangée de pegs entre chaque paire
+  // Sections variées : zigzag → plinko → bumpers → zigzag → plinko → bumpers
+  const sectionH = 820;
   const startY = SPAWN_Y + 360;
-  const rampSpacing = 280;
-  const numRamps = Math.floor((FINISH_Y - 300 - startY) / rampSpacing);
+  const sections = ['zigzag', 'plinko', 'bumpers', 'zigzag', 'plinko', 'bumpers'];
 
-  for (let i = 0; i < numRamps; i++) {
-    const y = startY + i * rampSpacing;
-    addZigzagRamp(scene, gfx, y, i % 2 === 0);
-    // Rangée de pegs centraux entre deux rampes
-    if (i % 2 === 1) addPegRow(scene, gfx, y + rampSpacing * 0.55);
-  }
+  sections.forEach((type, i) => {
+    const y = startY + i * sectionH;
+    if (y + sectionH > FINISH_Y - 200) return;
+    if (type === 'zigzag')  addZigzagSection(scene, gfx, y, sectionH);
+    if (type === 'plinko')  addPlinkoSection(scene, gfx, y, sectionH);
+    if (type === 'bumpers') addBumperSection(scene, gfx, y, sectionH);
+    // Entonnoir de transition entre sections
+    addFunnel(scene, gfx, y + sectionH - 30, 300, 110);
+  });
 
-  // Entonnoir final avant la ligne d'arrivée
-  addFunnel(scene, gfx, FINISH_Y - 140, 360, 100);
+  // Entonnoir final
+  addFunnel(scene, gfx, FINISH_Y - 130, 380, 100);
 
-  // Sensor ligne d'arrivée
   scene.matter.add.rectangle(W / 2, FINISH_Y + 15, W + 50, 30, {
     isStatic: true, isSensor: true, label: 'finish',
   });
 }
 
-// Rampe zigzag : guide les billes vers le bas à gauche ou à droite
-// laisse un gap de ~120px de l'autre côté pour qu'elles tombent
-function addZigzagRamp(scene, gfx, y, fromLeft) {
-  const rampW = 370;
-  const h = 16;
-  const angle = 20;
-  const cx = fromLeft ? 18 + rampW / 2 : W - 18 - rampW / 2;
-  const deg = fromLeft ? angle : -angle;
-  addRamp(scene, gfx, cx, y, rampW, h, deg, 0x3a55cc);
+// --- SECTION ZIGZAG : rampes alternées larges ---
+function addZigzagSection(scene, gfx, startY, height) {
+  const count = 4;
+  const spacing = height / (count + 1);
+  for (let i = 0; i < count; i++) {
+    const y = startY + (i + 1) * spacing;
+    const fromLeft = i % 2 === 0;
+    const rampW = 360;
+    const cx = fromLeft ? 18 + rampW / 2 : W - 18 - rampW / 2;
+    const deg = fromLeft ? 18 : -18;
+    addRamp(scene, gfx, cx, y, rampW, 16, deg, 0x3a55cc);
+  }
 }
 
-// Rangée de 4 pegs régulièrement espacés au centre
-function addPegRow(scene, gfx, y) {
-  const count = 4;
-  const pad = 70;
-  const step = (W - pad * 2) / (count - 1);
-  for (let i = 0; i < count; i++) {
-    const x = pad + i * step;
-    const r = 8;
-    scene.matter.add.circle(x, y, r, { isStatic: true, restitution: 0.35, friction: 0, frictionStatic: 0 });
-    gfx.fillStyle(0x5566cc);
-    gfx.fillCircle(x, y, r);
-    gfx.lineStyle(1.5, 0x8899ff, 0.7);
-    gfx.strokeCircle(x, y, r);
+// --- SECTION PLINKO : grille de pegs décalés (style pachinko) ---
+function addPlinkoSection(scene, gfx, startY, height) {
+  const rows = 7, cols = 5;
+  const padX = 50;
+  const dx = (W - padX * 2) / (cols - 1);
+  const dy = height / (rows + 1);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const offset = r % 2 === 0 ? 0 : dx / 2;
+      const x = padX + c * dx + offset;
+      const y = startY + (r + 1) * dy;
+      if (x < 25 || x > W - 25) continue;
+      const pr = 7;
+      scene.matter.add.circle(x, y, pr, { isStatic: true, restitution: 0.5, friction: 0, frictionStatic: 0 });
+      gfx.fillStyle(0x4466dd); gfx.fillCircle(x, y, pr);
+      gfx.lineStyle(1.5, 0x88aaff, 0.8); gfx.strokeCircle(x, y, pr);
+    }
+  }
+}
+
+// --- SECTION BUMPERS : gros cercles rebondissants disposés en losange ---
+function addBumperSection(scene, gfx, startY, height) {
+  // Disposition fixe en losange pour garantir un chemin libre
+  const positions = [
+    { x: W * 0.25, y: 0.18 }, { x: W * 0.75, y: 0.18 },
+    { x: W * 0.50, y: 0.36 },
+    { x: W * 0.20, y: 0.54 }, { x: W * 0.80, y: 0.54 },
+    { x: W * 0.50, y: 0.72 },
+    { x: W * 0.30, y: 0.88 }, { x: W * 0.70, y: 0.88 },
+  ];
+  for (const p of positions) {
+    const x = p.x;
+    const y = startY + p.y * height;
+    const r = 18;
+    scene.matter.add.circle(x, y, r, { isStatic: true, restitution: 0.85, friction: 0, frictionStatic: 0 });
+    gfx.fillStyle(0xcc2255); gfx.fillCircle(x, y, r);
+    gfx.lineStyle(3, 0xff4488, 0.9); gfx.strokeCircle(x, y, r);
+    // Halo lumineux
+    gfx.lineStyle(6, 0xff4488, 0.25); gfx.strokeCircle(x, y, r + 5);
   }
 }
 
 function addRamp(scene, gfx, cx, cy, w, h, deg, color) {
   const rad = Phaser.Math.DegToRad(deg);
-  scene.matter.add.rectangle(cx, cy, w, h, { isStatic: true, angle: rad, friction: 0.01, restitution: 0.2, frictionStatic: 0 });
+  scene.matter.add.rectangle(cx, cy, w, h, { isStatic: true, angle: rad, friction: 0, restitution: 0.1, frictionStatic: 0 });
   gfx.fillStyle(color);
   gfx.fillPoints(rotatedCorners(cx, cy, w, h, rad), true);
 }
