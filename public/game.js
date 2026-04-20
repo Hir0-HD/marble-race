@@ -428,21 +428,23 @@ function addBowl(scene, gfx, cx, cy, r, gapW) {
   const bowlEdgeY  = cy + r * Math.sin(edgeA);
   const connH = t;
 
-  // Connecteur droit (bord bol → mur droit)
+  // Connecteurs inclinés vers le bol (−8° droite, +8° gauche) → billes glissent vers le bol
+  const tiltRad = Phaser.Math.DegToRad(8);
   if (W - WALL_W - bowlRightX > 4) {
     const cw = W - WALL_W - bowlRightX;
-    gfx.fillStyle(CYAN);
-    gfx.fillRect(bowlRightX, bowlEdgeY - connH / 2, cw, connH);
+    const rad = Phaser.Math.DegToRad(-8);
     scene.matter.add.rectangle(bowlRightX + cw / 2, bowlEdgeY, cw, connH,
-      { isStatic: true, friction: 0, restitution: 0.1, frictionStatic: 0 });
+      { isStatic: true, angle: rad, friction: 0, restitution: 0.1, frictionStatic: 0 });
+    gfx.fillStyle(CYAN);
+    gfx.fillPoints(rotatedCorners(bowlRightX + cw / 2, bowlEdgeY, cw, connH, rad), true);
   }
-  // Connecteur gauche (mur gauche → bord bol)
   if (bowlLeftX - WALL_W > 4) {
     const cw = bowlLeftX - WALL_W;
-    gfx.fillStyle(CYAN);
-    gfx.fillRect(WALL_W, bowlEdgeY - connH / 2, cw, connH);
+    const rad = Phaser.Math.DegToRad(8);
     scene.matter.add.rectangle(WALL_W + cw / 2, bowlEdgeY, cw, connH,
-      { isStatic: true, friction: 0, restitution: 0.1, frictionStatic: 0 });
+      { isStatic: true, angle: rad, friction: 0, restitution: 0.1, frictionStatic: 0 });
+    gfx.fillStyle(CYAN);
+    gfx.fillPoints(rotatedCorners(WALL_W + cw / 2, bowlEdgeY, cw, connH, rad), true);
   }
 
   // Physique : 5 segments par arc
