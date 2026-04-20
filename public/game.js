@@ -259,15 +259,18 @@ function update(time) {
         MBody.setVelocity(m.body, { x: vx * MAX_SPEED / spd, y: vy * MAX_SPEED / spd });
       }
 
-      // Anti-stuck : si la bille n'a pas bougé de 8px en ~2s → impulsion aléatoire vers le bas
+      // Sécurité : bille passée sous la finish sans déclencher le sensor (tunneling)
+      if (y >= FINISH_Y) { onFinish(m.id); }
+
+      // Anti-stuck : si la bille n'a pas bougé de 8px en ~1.5s → impulsion vers le bas
       if (m._stuckFrames === undefined) { m._stuckFrames = 0; m._lastCheck = { x, y }; }
       m._stuckFrames++;
-      if (m._stuckFrames >= 120) {
+      if (m._stuckFrames >= 90) {
         const ddx = x - m._lastCheck.x, ddy = y - m._lastCheck.y;
         if (ddx * ddx + ddy * ddy < 64) {
           MBody.applyForce(m.body, m.body.position, {
-            x: (Math.random() - 0.5) * 0.018,
-            y: 0.01,
+            x: (Math.random() - 0.5) * 0.022,
+            y: 0.012,
           });
         }
         m._stuckFrames = 0;
@@ -277,10 +280,12 @@ function update(time) {
   }
 
   // Caméra : suit le leader avant la 1ère arrivée, fige sur la finish ensuite
+  // Clamp à FINISH_Y pour éviter que la cam parte en bas si une bille bug
   if (!firstFinished) {
     const leader = getLeader();
     if (leader) {
-      const target = leader.body.position.y - H * 0.35;
+      const raw = leader.body.position.y - H * 0.35;
+      const target = Math.min(raw, FINISH_Y - H * 0.5);
       _scene.cameras.main.scrollY = Phaser.Math.Linear(_scene.cameras.main.scrollY, target, 0.07);
       uiLeader.setText('▶ Leader : ' + leader.username);
     }
@@ -498,7 +503,7 @@ function addBowl(scene, gfx, cx, cy, r, gapW) {
 // Section bols : 3 bols empilés, toujours décalés gauche/droite (jamais centré)
 // Le gap n'est JAMAIS au centre (x=270) pour forcer les billes à dévier
 function addBowlSection(scene, gfx, startY, height, shift) {
-  const r = 160, gapW = 50;
+  const r = 160, gapW = 70;
   const spacing = height / 3.5;
   // shift=+1 → 1er bol à gauche, -1 → 1er bol à droite
   const dir = shift >= 0 ? 1 : -1;
