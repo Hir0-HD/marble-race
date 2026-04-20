@@ -245,21 +245,6 @@ function update(time) {
     const inView = y >= camY - 150 && y <= camY + H + 150;
     m.img.setPosition(x, y).setVisible(inView);
 
-    if (!m.finished) {
-      const { x: vx, y: vy } = m.body.velocity;
-      if (Math.abs(vx) + Math.abs(vy) < 0.5) {
-        m.stuckFrames = (m.stuckFrames || 0) + 1;
-        if (m.stuckFrames > 120) { // ~2s à 60fps
-          MBody.applyForce(m.body, m.body.position, {
-            x: (Math.random() - 0.5) * 0.003,
-            y: 0.005,
-          });
-          m.stuckFrames = 0;
-        }
-      } else {
-        m.stuckFrames = 0;
-      }
-    }
   }
 
   // Caméra : suit le leader avant la 1ère arrivée, fige sur la finish ensuite
@@ -444,23 +429,25 @@ function addBowl(scene, gfx, cx, cy, r, gapW) {
   const bowlEdgeY  = cy + r * Math.sin(edgeA);
   const connH = t;
 
-  // Connecteurs inclinés vers le bol (−8° droite, +8° gauche) → billes glissent vers le bol
-  const tiltRad = Phaser.Math.DegToRad(8);
-  if (W - WALL_W - bowlRightX > 4) {
-    const cw = W - WALL_W - bowlRightX;
-    const rad = Phaser.Math.DegToRad(-8);
-    scene.matter.add.rectangle(bowlRightX + cw / 2, bowlEdgeY, cw, connH,
-      { isStatic: true, angle: rad, friction: 0, restitution: 0.1, frictionStatic: 0 });
+  // Rampes d'entrée à 30° : guident les billes vers le bol sans créer de zone plate
+  const rampOpts = { isStatic: true, friction: 0, restitution: 0.1, frictionStatic: 0 };
+  if (W - WALL_W - bowlRightX > 6) {
+    const cw = W - WALL_W - bowlRightX + 10;
+    const rx = W - WALL_W - cw / 2 + 5;
+    const ry = bowlEdgeY - Math.tan(Phaser.Math.DegToRad(30)) * cw / 2;
+    const rad = Phaser.Math.DegToRad(-30);
+    scene.matter.add.rectangle(rx, ry, cw, connH, { ...rampOpts, angle: rad });
     gfx.fillStyle(CYAN);
-    gfx.fillPoints(rotatedCorners(bowlRightX + cw / 2, bowlEdgeY, cw, connH, rad), true);
+    gfx.fillPoints(rotatedCorners(rx, ry, cw, connH, rad), true);
   }
-  if (bowlLeftX - WALL_W > 4) {
-    const cw = bowlLeftX - WALL_W;
-    const rad = Phaser.Math.DegToRad(8);
-    scene.matter.add.rectangle(WALL_W + cw / 2, bowlEdgeY, cw, connH,
-      { isStatic: true, angle: rad, friction: 0, restitution: 0.1, frictionStatic: 0 });
+  if (bowlLeftX - WALL_W > 6) {
+    const cw = bowlLeftX - WALL_W + 10;
+    const rx = WALL_W + cw / 2 - 5;
+    const ry = bowlEdgeY - Math.tan(Phaser.Math.DegToRad(30)) * cw / 2;
+    const rad = Phaser.Math.DegToRad(30);
+    scene.matter.add.rectangle(rx, ry, cw, connH, { ...rampOpts, angle: rad });
     gfx.fillStyle(CYAN);
-    gfx.fillPoints(rotatedCorners(WALL_W + cw / 2, bowlEdgeY, cw, connH, rad), true);
+    gfx.fillPoints(rotatedCorners(rx, ry, cw, connH, rad), true);
   }
 
   // Physique : 5 segments par arc
@@ -495,7 +482,7 @@ function addBowlSection(scene, gfx, startY, height, shift) {
 
 // Section Plinko
 function addPlinkoSection(scene, gfx, startY, height) {
-  const rows = 8, cols = 5, padX = 55;
+  const rows = 7, cols = 4, padX = 60;
   const dx = (W - padX * 2) / (cols - 1);
   const dy = height / (rows + 1);
   for (let r = 0; r < rows; r++) {
