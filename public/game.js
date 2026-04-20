@@ -32,6 +32,7 @@ const config = {
   height: H,
   backgroundColor: '#0d0d1a',
   parent: 'game-container',
+  resolution: window.devicePixelRatio || 1,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -202,11 +203,28 @@ function update(time) {
 
   const camY = _scene.cameras.main.scrollY;
 
-  // Mise à jour position des sprites
+  // Mise à jour position des sprites + anti-stuck
   for (const m of marbles) {
     const { x, y } = m.body.position;
     const inView = y >= camY - 150 && y <= camY + H + 150;
     m.img.setPosition(x, y).setVisible(inView);
+
+    if (!m.finished) {
+      const vel = m.body.velocity;
+      const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+      if (speed < 0.4) {
+        m.stuckFrames = (m.stuckFrames || 0) + 1;
+        if (m.stuckFrames > 90) {
+          _scene.matter.body.applyForce(m.body, m.body.position, {
+            x: (Math.random() - 0.5) * 0.004,
+            y: 0.006,
+          });
+          m.stuckFrames = 0;
+        }
+      } else {
+        m.stuckFrames = 0;
+      }
+    }
   }
 
   // Caméra suit le leader
@@ -240,8 +258,8 @@ async function doSpawn(follower) {
   }
 
   const body = _scene.matter.add.circle(x, SPAWN_Y, MARBLE_R, {
-    restitution: 0.3, friction: 0.08, frictionAir: 0.012,
-    density: 0.002, sleepThreshold: 600,
+    restitution: 0.3, friction: 0.05, frictionAir: 0.010,
+    frictionStatic: 0, density: 0.002, sleepThreshold: 600,
     label: `m:${follower.id}`,
   });
 
@@ -301,7 +319,7 @@ function getLeader() {
   for (const m of marbles) {
     if (!m.finished && m.body.position.y > maxY) { maxY = m.body.position.y; best = m; }
   }
-  return best || marbles[0] || null;
+  return best;
 }
 
 // =====================

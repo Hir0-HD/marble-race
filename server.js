@@ -11,13 +11,6 @@ const io = new Server(httpServer);
 
 app.use(express.json());
 
-// Jeu réservé à l'admin (URL privée)
-app.get('/game', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-// Public → leaderboard uniquement
-app.get('/', (_req, res) => res.redirect('/leaderboard.html'));
-
-app.use(express.static(path.join(__dirname, 'public')));
-
 // Injecte le mot de passe admin dans la page (côté client)
 const ADMIN_PWD = process.env.ADMIN_PASSWORD || 'admin1234';
 app.get('/admin.html', (_req, res) => {
@@ -26,6 +19,13 @@ app.get('/admin.html', (_req, res) => {
   html = html.replace('window.__ADMIN_PWD__', `"${ADMIN_PWD}"`);
   res.send(html);
 });
+
+// Jeu réservé à l'admin (URL privée)
+app.get('/game', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// Public → leaderboard uniquement
+app.get('/', (_req, res) => res.redirect('/leaderboard.html'));
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Proxy avatar TikTok (évite les problèmes CORS)
 app.get('/api/avatar', async (req, res) => {
