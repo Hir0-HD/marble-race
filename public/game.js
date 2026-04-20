@@ -16,6 +16,7 @@ let marbles = [];
 let marbleMap = {};
 let results = [];
 let raceStarted = false;
+let firstFinished = false;
 let spawnQueue = [];
 let lastSpawnTime = 0;
 let _scene = null;
@@ -190,7 +191,7 @@ function create() {
     if (raceStarted) spawnQueue.push(f);
   });
 
-  socket.on('race_reset', () => location.reload());
+  socket.on('race_reset', () => { firstFinished = false; location.reload(); });
 }
 
 function update(time) {
@@ -203,36 +204,24 @@ function update(time) {
 
   const camY = _scene.cameras.main.scrollY;
 
-  // Mise à jour position des sprites + anti-stuck
+  // Mise à jour position des sprites
   for (const m of marbles) {
     const { x, y } = m.body.position;
     const inView = y >= camY - 150 && y <= camY + H + 150;
     m.img.setPosition(x, y).setVisible(inView);
-
-    if (!m.finished) {
-      const vel = m.body.velocity;
-      const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
-      if (speed < 0.4) {
-        m.stuckFrames = (m.stuckFrames || 0) + 1;
-        if (m.stuckFrames > 90) {
-          _scene.matter.body.applyForce(m.body, m.body.position, {
-            x: (Math.random() - 0.5) * 0.004,
-            y: 0.006,
-          });
-          m.stuckFrames = 0;
-        }
-      } else {
-        m.stuckFrames = 0;
-      }
-    }
   }
 
-  // Caméra suit le leader
-  const leader = getLeader();
-  if (leader) {
-    const target = leader.body.position.y - H * 0.35;
-    _scene.cameras.main.scrollY = Phaser.Math.Linear(_scene.cameras.main.scrollY, target, 0.07);
-    uiLeader.setText('▶ Leader : ' + leader.username);
+  // Caméra : suit le leader avant la 1ère arrivée, fige sur la finish ensuite
+  if (!firstFinished) {
+    const leader = getLeader();
+    if (leader) {
+      const target = leader.body.position.y - H * 0.35;
+      _scene.cameras.main.scrollY = Phaser.Math.Linear(_scene.cameras.main.scrollY, target, 0.07);
+      uiLeader.setText('▶ Leader : ' + leader.username);
+    }
+  } else {
+    const target = FINISH_Y - H * 0.6;
+    _scene.cameras.main.scrollY = Phaser.Math.Linear(_scene.cameras.main.scrollY, target, 0.04);
   }
 
   uiCount.setText('⚪ ' + marbles.length);
@@ -279,7 +268,7 @@ function onFinish(id) {
   m.rank = results.length + 1;
   results.push(m);
 
-  if (m.rank === 1) showWinner(m);
+  if (m.rank === 1) { firstFinished = true; showWinner(m); }
 
   fetch('/api/result', {
     method: 'POST',
@@ -328,89 +317,79 @@ function getLeader() {
 function buildTrack(scene) {
   const gfx = scene.add.graphics().setDepth(1);
 
+  // Fond alterné
   for (let y = 0; y < WORLD_H; y += 1000) {
     gfx.fillStyle(y % 2000 === 0 ? 0x0d0d1a : 0x111126);
     gfx.fillRect(0, y, W, 1000);
   }
 
-  // Murs
+  // Murs latéraux
   gfx.fillStyle(0x1e1e4a);
   gfx.fillRect(0, 0, 18, WORLD_H);
   gfx.fillRect(W - 18, 0, 18, WORLD_H);
   scene.matter.add.rectangle(9, WORLD_H / 2, 18, WORLD_H, { isStatic: true });
   scene.matter.add.rectangle(W - 9, WORLD_H / 2, 18, WORLD_H, { isStatic: true });
 
-  // Entonnoir départ
-  addFunnel(scene, gfx, SPAWN_Y + 150, 420, 100);
+  // Entonnoir de départ — regroupe les billes
+  addFunnel(scene, gfx, SPAWN_Y + 160, 460, 90);
 
-  const types = ['pegs', 'ramps', 'bumpers'];
-  const sectionH = 700;
-  const startY = SPAWN_Y + 340;
-  const numSections = Math.floor((FINISH_Y - startY - 100) / sectionH);
+  // Zigzag : rampes alternées gauche/droite avec rangée de pegs entre chaque paire
+  const startY = SPAWN_Y + 360;
+  const rampSpacing = 280;
+  const numRamps = Math.floor((FINISH_Y - 300 - startY) / rampSpacing);
 
-  for (let i = 0; i < numSections; i++) {
-    const yBase = startY + i * sectionH;
-    const type = types[i % types.length];
-    if (type === 'pegs')    addPegs(scene, gfx, yBase, sectionH);
-    if (type === 'ramps')   addRamps(scene, gfx, yBase, sectionH);
-    if (type === 'bumpers') addBumpers(scene, gfx, yBase, sectionH);
-    if (i < numSections - 1) addFunnel(scene, gfx, yBase + sectionH - 50, 220, 80);
+  for (let i = 0; i < numRamps; i++) {
+    const y = startY + i * rampSpacing;
+    addZigzagRamp(scene, gfx, y, i % 2 === 0);
+    // Rangée de pegs centraux entre deux rampes
+    if (i % 2 === 1) addPegRow(scene, gfx, y + rampSpacing * 0.55);
   }
 
-  // Sensor arrivée
+  // Entonnoir final avant la ligne d'arrivée
+  addFunnel(scene, gfx, FINISH_Y - 140, 360, 100);
+
+  // Sensor ligne d'arrivée
   scene.matter.add.rectangle(W / 2, FINISH_Y + 15, W + 50, 30, {
-    isStatic: true, isSensor: true, label: 'finish'
+    isStatic: true, isSensor: true, label: 'finish',
   });
+}
+
+// Rampe zigzag : guide les billes vers le bas à gauche ou à droite
+// laisse un gap de ~120px de l'autre côté pour qu'elles tombent
+function addZigzagRamp(scene, gfx, y, fromLeft) {
+  const rampW = 370;
+  const h = 16;
+  const angle = 20;
+  const cx = fromLeft ? 18 + rampW / 2 : W - 18 - rampW / 2;
+  const deg = fromLeft ? angle : -angle;
+  addRamp(scene, gfx, cx, y, rampW, h, deg, 0x3a55cc);
+}
+
+// Rangée de 4 pegs régulièrement espacés au centre
+function addPegRow(scene, gfx, y) {
+  const count = 4;
+  const pad = 70;
+  const step = (W - pad * 2) / (count - 1);
+  for (let i = 0; i < count; i++) {
+    const x = pad + i * step;
+    const r = 8;
+    scene.matter.add.circle(x, y, r, { isStatic: true, restitution: 0.35, friction: 0, frictionStatic: 0 });
+    gfx.fillStyle(0x5566cc);
+    gfx.fillCircle(x, y, r);
+    gfx.lineStyle(1.5, 0x8899ff, 0.7);
+    gfx.strokeCircle(x, y, r);
+  }
 }
 
 function addRamp(scene, gfx, cx, cy, w, h, deg, color) {
   const rad = Phaser.Math.DegToRad(deg);
-  scene.matter.add.rectangle(cx, cy, w, h, { isStatic: true, angle: rad, friction: 0.02, restitution: 0.3 });
+  scene.matter.add.rectangle(cx, cy, w, h, { isStatic: true, angle: rad, friction: 0.01, restitution: 0.2, frictionStatic: 0 });
   gfx.fillStyle(color);
   gfx.fillPoints(rotatedCorners(cx, cy, w, h, rad), true);
 }
 
 function addFunnel(scene, gfx, cy, openW, gapW) {
   const arm = (openW - gapW) / 2;
-  addRamp(scene, gfx, W/2 - gapW/2 - arm/2, cy, arm, 12, -22, 0x2a2a6a);
-  addRamp(scene, gfx, W/2 + gapW/2 + arm/2, cy, arm, 12,  22, 0x2a2a6a);
-}
-
-function addPegs(scene, gfx, yBase, height) {
-  const rows = 7, cols = 6, padX = 35;
-  const dx = (W - padX * 2) / (cols - 1);
-  const dy = height / (rows + 2);
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x = padX + c * dx + (r % 2 === 0 ? 0 : dx / 2);
-      const y = yBase + (r + 1) * dy;
-      if (x < 22 || x > W - 22) continue;
-      const pr = 6 + Math.random() * 4;
-      scene.matter.add.circle(x, y, pr, { isStatic: true, restitution: 0.45, friction: 0.02 });
-      gfx.fillStyle(0x5566cc); gfx.fillCircle(x, y, pr);
-      gfx.lineStyle(1.5, 0x8899ff, 0.6); gfx.strokeCircle(x, y, pr);
-    }
-  }
-}
-
-function addRamps(scene, gfx, yBase, height) {
-  const count = 5 + Math.floor(Math.random() * 4);
-  for (let i = 0; i < count; i++) {
-    const x = 50 + Math.random() * (W - 100);
-    const y = yBase + (height / count) * i + 50 + Math.random() * 60;
-    const w = 80 + Math.random() * 120;
-    addRamp(scene, gfx, x, y, w, 12, (Math.random() - 0.5) * 50, 0x4455aa);
-  }
-}
-
-function addBumpers(scene, gfx, yBase, height) {
-  const count = 5 + Math.floor(Math.random() * 5);
-  for (let i = 0; i < count; i++) {
-    const x = 40 + Math.random() * (W - 80);
-    const y = yBase + Math.random() * height * 0.85 + 50;
-    const r = 14 + Math.random() * 14;
-    scene.matter.add.circle(x, y, r, { isStatic: true, restitution: 1.05, friction: 0 });
-    gfx.fillStyle(0xcc2255); gfx.fillCircle(x, y, r);
-    gfx.lineStyle(2.5, 0xff4488, 0.8); gfx.strokeCircle(x, y, r);
-  }
+  addRamp(scene, gfx, W / 2 - gapW / 2 - arm / 2, cy, arm, 12, -22, 0x2a2a6a);
+  addRamp(scene, gfx, W / 2 + gapW / 2 + arm / 2, cy, arm, 12,  22, 0x2a2a6a);
 }
