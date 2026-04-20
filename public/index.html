@@ -22,13 +22,7 @@
     <div id="marble-count">…</div>
     <div id="marble-label">billes prêtes</div>
 
-    <button class="btn btn-primary" id="start-btn" onclick="startRace()">
-      Lancer la course 🚀
-    </button>
-
-    <a class="btn btn-secondary" href="/leaderboard.html" target="_blank">
-      📊 Voir le classement
-    </a>
+    <p style="color:#888;font-size:0.9rem;margin-top:16px;">En attente du lancement par l'admin…</p>
 
     <div id="mock-badge" class="badge-mock" style="display:none">
       ⚠️ Mode démo — données simulées
@@ -40,12 +34,5 @@
 <script src="/socket.io/socket.io.js"></script>
 <script src="game.js"></script>
 
-<script>
-  async function startRace() {
-    document.getElementById('start-btn').disabled = true;
-    document.getElementById('start-btn').textContent = 'Démarrage…';
-    await fetch('/api/start', { method: 'POST' });
-  }
-</script>
 </body>
 </html>

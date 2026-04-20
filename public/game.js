@@ -3,7 +3,7 @@
 // =====================
 const W = 540;
 const H = 960;
-const WORLD_H = 10000;
+const WORLD_H = 6000;
 const MARBLE_R = 8;
 const SPAWN_Y = 80;
 const FINISH_Y = WORLD_H - 220;
@@ -41,10 +41,11 @@ const config = {
   physics: {
     default: 'matter',
     matter: {
-      gravity: { y: 1.8 },
+      gravity: { y: 0.8 },
       debug: false,
-      positionIterations: 6,
-      velocityIterations: 4,
+      positionIterations: 12,
+      velocityIterations: 8,
+      constraintIterations: 4,
     }
   },
   scene: { preload, create, update }
@@ -134,7 +135,7 @@ function create() {
 
   this.matter.world.setBounds(0, 0, W, WORLD_H);
   this.cameras.main.setBounds(0, 0, W, WORLD_H);
-  this.matter.world.engine.enableSleeping = true;
+  this.matter.world.engine.enableSleeping = false;
 
   buildTrack(this);
 
@@ -239,8 +240,8 @@ async function doSpawn(follower) {
   }
 
   const body = _scene.matter.add.circle(x, SPAWN_Y, MARBLE_R, {
-    restitution: 0.55, friction: 0.05, frictionAir: 0.002,
-    density: 0.003, sleepThreshold: 120,
+    restitution: 0.3, friction: 0.08, frictionAir: 0.012,
+    density: 0.002, sleepThreshold: 600,
     label: `m:${follower.id}`,
   });
 

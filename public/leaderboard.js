@@ -26,7 +26,7 @@ function render(results) {
     return;
   }
 
-  list.innerHTML = results.map((r, i) => `
+  list.innerHTML = results.slice(0, 10).map((r, i) => `
     <div class="lb-entry ${rankClass(i)}">
       <span class="lb-rank">${MEDALS[i] ?? '#' + (i + 1)}</span>
       <span class="lb-username">${r.username}</span>

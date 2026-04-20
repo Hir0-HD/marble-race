@@ -9,8 +9,14 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+
+// Jeu réservé à l'admin (URL privée)
+app.get('/game', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// Public → leaderboard uniquement
+app.get('/', (_req, res) => res.redirect('/leaderboard.html'));
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Injecte le mot de passe admin dans la page (côté client)
 const ADMIN_PWD = process.env.ADMIN_PASSWORD || 'admin1234';
@@ -45,6 +51,7 @@ let raceActive = false;
 const MOCK_MODE = !process.env.TIKTOK_SESSION_ID;
 const POLL_MS = parseInt(process.env.POLL_INTERVAL || '30000', 10);
 const TT_USER = process.env.TIKTOK_USERNAME || 'demo';
+const MAX_MARBLES = parseInt(process.env.MAX_MARBLES || '10', 10);
 
 const MOCK_POOL = [
   'shadow_wolf','neon_rider','pixel_fox','storm_eagle','cyber_cat',
@@ -95,9 +102,11 @@ async function fetchNewFollowers() {
 }
 
 async function poll() {
+  if (MOCK_MODE && followers.length >= MAX_MARBLES) return;
   const newOnes = await fetchNewFollowers();
   for (const f of newOnes) {
     if (!knownIds.has(f.id)) {
+      if (MOCK_MODE && followers.length >= MAX_MARBLES) break;
       knownIds.add(f.id);
       followers.push(f);
       io.emit('new_follower', f);
@@ -117,7 +126,7 @@ function seedFollowers(n) {
   console.log(`[Init] ${n} billes seed (mode ${MOCK_MODE ? 'mock' : 'TikTok'})`);
 }
 
-seedFollowers(MOCK_MODE ? 30 : 0);
+seedFollowers(MOCK_MODE ? MAX_MARBLES : 0);
 setInterval(poll, POLL_MS);
 
 // =====================
@@ -148,7 +157,7 @@ app.post('/api/result', (req, res) => {
 app.post('/api/reset', (_req, res) => {
   followers = []; results = []; knownIds = new Set();
   raceActive = false; mockIdx = 0;
-  seedFollowers(MOCK_MODE ? 30 : 0);
+  seedFollowers(MOCK_MODE ? MAX_MARBLES : 0);
   io.emit('race_reset');
   console.log('[Race] Reset');
   res.json({ ok: true });
