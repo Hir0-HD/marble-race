@@ -35,7 +35,10 @@ const config = {
   type: Phaser.AUTO,
   width: W,
   height: H,
-  backgroundColor: '#0d0d1a',
+  backgroundColor: '#000000',
+  antialias: true,
+  antialiasGL: true,
+  roundPixels: false,
   parent: 'game-container',
   resolution: window.devicePixelRatio || 1,
   scale: {
@@ -49,9 +52,9 @@ const config = {
     matter: {
       gravity: { y: 0.9 },
       debug: false,
-      positionIterations: 12,
-      velocityIterations: 8,
-      constraintIterations: 4,
+      positionIterations: 20,
+      velocityIterations: 16,
+      constraintIterations: 6,
     }
   },
   scene: { preload, create, update }
@@ -170,20 +173,21 @@ function create() {
 
   buildTrack(this);
 
-  // UI fixée caméra
+  const textBase = { fontFamily: '"Arial", sans-serif', stroke: '#000000', strokeThickness: 2 };
+
   uiLeader = this.add.text(12, 12, '', {
-    fontSize: '15px', color: '#ffffff',
-    backgroundColor: '#00000099', padding: { x: 8, y: 5 }
+    ...textBase, fontSize: '16px', color: '#00ccdd',
+    backgroundColor: '#00000088', padding: { x: 10, y: 6 }
   }).setScrollFactor(0).setDepth(100);
 
   uiCount = this.add.text(W - 12, 12, '', {
-    fontSize: '15px', color: '#ffffff',
-    backgroundColor: '#00000099', padding: { x: 8, y: 5 }
+    ...textBase, fontSize: '16px', color: '#ffffff',
+    backgroundColor: '#00000088', padding: { x: 10, y: 6 }
   }).setScrollFactor(0).setDepth(100).setOrigin(1, 0);
 
   uiFinished = this.add.text(W / 2, H - 18, '', {
-    fontSize: '14px', color: '#facc15',
-    backgroundColor: '#00000099', padding: { x: 8, y: 5 }
+    ...textBase, fontSize: '15px', color: '#facc15',
+    backgroundColor: '#00000088', padding: { x: 10, y: 6 }
   }).setScrollFactor(0).setDepth(100).setOrigin(0.5, 1);
 
   // Ligne d'arrivée
@@ -239,12 +243,20 @@ function update(time) {
 
   const camY = _scene.cameras.main.scrollY;
 
-  // Mise à jour position + anti-stuck discret
+  // Mise à jour position + cap de vitesse (évite le tunneling à haute vitesse)
+  const MAX_SPEED = 22;
   for (const m of marbles) {
     const { x, y } = m.body.position;
     const inView = y >= camY - 150 && y <= camY + H + 150;
     m.img.setPosition(x, y).setVisible(inView);
 
+    if (!m.finished) {
+      const { x: vx, y: vy } = m.body.velocity;
+      const spd = Math.sqrt(vx * vx + vy * vy);
+      if (spd > MAX_SPEED) {
+        MBody.setVelocity(m.body, { x: vx * MAX_SPEED / spd, y: vy * MAX_SPEED / spd });
+      }
+    }
   }
 
   // Caméra : suit le leader avant la 1ère arrivée, fige sur la finish ensuite
