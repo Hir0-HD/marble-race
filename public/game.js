@@ -23,6 +23,10 @@ let _scene = null;
 let socket;
 let uiLeader, uiCount, uiFinished;
 let winnerPopup = null;
+let spinners = [];
+
+// Raccourci vers Matter.Body pour les spinners
+const MBody = Phaser.Physics.Matter.Matter.Body;
 
 // =====================
 // Phaser Config
@@ -43,7 +47,7 @@ const config = {
   physics: {
     default: 'matter',
     matter: {
-      gravity: { y: 1.5 },
+      gravity: { y: 1.3 },
       debug: false,
       positionIterations: 12,
       velocityIterations: 8,
@@ -135,7 +139,8 @@ function preload() {
 function create() {
   _scene = this;
 
-  this.matter.world.setBounds(0, 0, W, WORLD_H);
+  // Seulement top/bottom via setBounds — les murs latéraux sont dans buildTrack
+  this.matter.world.setBounds(0, 0, W, WORLD_H, 50, false, false, true, true);
   this.cameras.main.setBounds(0, 0, W, WORLD_H);
   this.matter.world.engine.enableSleeping = false;
 
@@ -200,6 +205,12 @@ function update(time) {
     lastSpawnTime = time;
   }
 
+  // Rotation des palettes
+  for (const s of spinners) {
+    MBody.setAngle(s.body, s.body.angle + s.speed);
+    s.visual.setRotation(s.body.angle);
+  }
+
   if (!raceStarted || marbles.length === 0) return;
 
   const camY = _scene.cameras.main.scrollY;
@@ -247,7 +258,7 @@ async function doSpawn(follower) {
   }
 
   const body = _scene.matter.add.circle(x, SPAWN_Y, MARBLE_R, {
-    restitution: 0.5, friction: 0.02, frictionAir: 0.004,
+    restitution: 0.4, friction: 0.01, frictionAir: 0.001,
     frictionStatic: 0, density: 0.002, sleepThreshold: 600,
     label: `m:${follower.id}`,
   });
@@ -317,61 +328,67 @@ function getLeader() {
 function buildTrack(scene) {
   const gfx = scene.add.graphics().setDepth(1);
 
+  // Fond
   for (let y = 0; y < WORLD_H; y += 1000) {
     gfx.fillStyle(y % 2000 === 0 ? 0x0d0d1a : 0x111126);
     gfx.fillRect(0, y, W, 1000);
   }
 
+  // Murs latéraux uniques (24px, restitution légère pour ne pas perdre de vitesse)
+  const wallOpts = { isStatic: true, restitution: 0.15, friction: 0, frictionStatic: 0 };
   gfx.fillStyle(0x1e1e4a);
-  gfx.fillRect(0, 0, 18, WORLD_H);
-  gfx.fillRect(W - 18, 0, 18, WORLD_H);
-  scene.matter.add.rectangle(9, WORLD_H / 2, 18, WORLD_H, { isStatic: true });
-  scene.matter.add.rectangle(W - 9, WORLD_H / 2, 18, WORLD_H, { isStatic: true });
+  gfx.fillRect(0, 0, 24, WORLD_H);
+  gfx.fillRect(W - 24, 0, 24, WORLD_H);
+  scene.matter.add.rectangle(12, WORLD_H / 2, 24, WORLD_H, wallOpts);
+  scene.matter.add.rectangle(W - 12, WORLD_H / 2, 24, WORLD_H, wallOpts);
 
-  // Entonnoir départ
-  addFunnel(scene, gfx, SPAWN_Y + 160, 460, 90);
+  // Entonnoir de départ : regroupe les billes
+  addFunnel(scene, gfx, SPAWN_Y + 160, 460, 85);
 
-  // Sections variées : zigzag → plinko → bumpers → zigzag → plinko → bumpers
-  const sectionH = 820;
-  const startY = SPAWN_Y + 360;
-  const sections = ['zigzag', 'plinko', 'bumpers', 'zigzag', 'plinko', 'bumpers'];
+  // ---- Sections alternées ----
+  // 1. Zigzag large → descente rapide, billes se séparent
+  addZigzagSection(scene, gfx, 380, 900);
+  addFunnel(scene, gfx, 1310, 340, 100);
 
-  sections.forEach((type, i) => {
-    const y = startY + i * sectionH;
-    if (y + sectionH > FINISH_Y - 200) return;
-    if (type === 'zigzag')  addZigzagSection(scene, gfx, y, sectionH);
-    if (type === 'plinko')  addPlinkoSection(scene, gfx, y, sectionH);
-    if (type === 'bumpers') addBumperSection(scene, gfx, y, sectionH);
-    // Entonnoir de transition entre sections
-    addFunnel(scene, gfx, y + sectionH - 30, 300, 110);
-  });
+  // 2. Plinko (pachinko) → les billes se dispersent aléatoirement
+  addPlinkoSection(scene, gfx, 1370, 850);
+  addFunnel(scene, gfx, 2260, 340, 100);
 
-  // Entonnoir final
+  // 3. Spinners → palettes rotatives qui ralentissent les rapides / boostent les lentes
+  addSpinnerSection(scene, 2320, 900);
+  addFunnel(scene, gfx, 3260, 340, 100);
+
+  // 4. Bumpers → rebonds chaotiques, possibilité de dépassement
+  addBumperSection(scene, gfx, 3320, 900);
+  addFunnel(scene, gfx, 4260, 340, 100);
+
+  // 5. Zigzag serré + pegs → sprint final tendu
+  addZigzagTightSection(scene, gfx, 4320, 1000);
   addFunnel(scene, gfx, FINISH_Y - 130, 380, 100);
 
+  // Sensor ligne d'arrivée
   scene.matter.add.rectangle(W / 2, FINISH_Y + 15, W + 50, 30, {
     isStatic: true, isSensor: true, label: 'finish',
   });
 }
 
-// --- SECTION ZIGZAG : rampes alternées larges ---
+// Section 1 — Zigzag large : 4 rampes alternées, angle prononcé
 function addZigzagSection(scene, gfx, startY, height) {
   const count = 4;
   const spacing = height / (count + 1);
   for (let i = 0; i < count; i++) {
     const y = startY + (i + 1) * spacing;
     const fromLeft = i % 2 === 0;
-    const rampW = 360;
-    const cx = fromLeft ? 18 + rampW / 2 : W - 18 - rampW / 2;
-    const deg = fromLeft ? 18 : -18;
-    addRamp(scene, gfx, cx, y, rampW, 16, deg, 0x3a55cc);
+    const rampW = 370;
+    const cx = fromLeft ? 24 + rampW / 2 : W - 24 - rampW / 2;
+    addRamp(scene, gfx, cx, y, rampW, 16, fromLeft ? 20 : -20, 0x3a55cc);
   }
 }
 
-// --- SECTION PLINKO : grille de pegs décalés (style pachinko) ---
+// Section 2 — Plinko : grille de pegs décalés (style pachinko)
 function addPlinkoSection(scene, gfx, startY, height) {
-  const rows = 7, cols = 5;
-  const padX = 50;
+  const rows = 8, cols = 5;
+  const padX = 55;
   const dx = (W - padX * 2) / (cols - 1);
   const dy = height / (rows + 1);
   for (let r = 0; r < rows; r++) {
@@ -379,40 +396,77 @@ function addPlinkoSection(scene, gfx, startY, height) {
       const offset = r % 2 === 0 ? 0 : dx / 2;
       const x = padX + c * dx + offset;
       const y = startY + (r + 1) * dy;
-      if (x < 25 || x > W - 25) continue;
+      if (x < 30 || x > W - 30) continue;
       const pr = 7;
-      scene.matter.add.circle(x, y, pr, { isStatic: true, restitution: 0.5, friction: 0, frictionStatic: 0 });
+      scene.matter.add.circle(x, y, pr, { isStatic: true, restitution: 0.55, friction: 0, frictionStatic: 0 });
       gfx.fillStyle(0x4466dd); gfx.fillCircle(x, y, pr);
-      gfx.lineStyle(1.5, 0x88aaff, 0.8); gfx.strokeCircle(x, y, pr);
+      gfx.lineStyle(2, 0x88aaff, 0.8); gfx.strokeCircle(x, y, pr);
     }
   }
 }
 
-// --- SECTION BUMPERS : gros cercles rebondissants disposés en losange ---
-function addBumperSection(scene, gfx, startY, height) {
-  // Disposition fixe en losange pour garantir un chemin libre
-  const positions = [
-    { x: W * 0.25, y: 0.18 }, { x: W * 0.75, y: 0.18 },
-    { x: W * 0.50, y: 0.36 },
-    { x: W * 0.20, y: 0.54 }, { x: W * 0.80, y: 0.54 },
-    { x: W * 0.50, y: 0.72 },
-    { x: W * 0.30, y: 0.88 }, { x: W * 0.70, y: 0.88 },
+// Section 3 — Spinners : palettes rotatives (static + setAngle chaque frame)
+function addSpinnerSection(scene, startY, height) {
+  const configs = [
+    { x: W * 0.33, y: startY + height * 0.20, w: 170, speed:  0.022 },
+    { x: W * 0.67, y: startY + height * 0.42, w: 150, speed: -0.030 },
+    { x: W * 0.30, y: startY + height * 0.64, w: 160, speed:  0.025 },
+    { x: W * 0.70, y: startY + height * 0.84, w: 140, speed: -0.020 },
   ];
-  for (const p of positions) {
-    const x = p.x;
-    const y = startY + p.y * height;
-    const r = 18;
-    scene.matter.add.circle(x, y, r, { isStatic: true, restitution: 0.85, friction: 0, frictionStatic: 0 });
+  for (const c of configs) {
+    const body = scene.matter.add.rectangle(c.x, c.y, c.w, 14, {
+      isStatic: true, friction: 0, restitution: 0.4, frictionStatic: 0, label: 'spinner',
+    });
+    // Rectangle Phaser pour le visuel (tourne avec le body)
+    const visual = scene.add.rectangle(c.x, c.y, c.w, 14, 0xffaa00).setDepth(5);
+    // Halo
+    scene.add.rectangle(c.x, c.y, c.w + 6, 20, 0xff6600, 0.25).setDepth(4);
+    spinners.push({ body, visual, speed: c.speed });
+  }
+}
+
+// Section 4 — Bumpers : gros ronds rebondissants en losange
+function addBumperSection(scene, gfx, startY, height) {
+  const pos = [
+    { x: 0.25, y: 0.12 }, { x: 0.75, y: 0.12 },
+    { x: 0.50, y: 0.28 },
+    { x: 0.20, y: 0.46 }, { x: 0.80, y: 0.46 },
+    { x: 0.50, y: 0.62 },
+    { x: 0.28, y: 0.80 }, { x: 0.72, y: 0.80 },
+  ];
+  for (const p of pos) {
+    const x = W * p.x, y = startY + p.y * height, r = 20;
+    scene.matter.add.circle(x, y, r, { isStatic: true, restitution: 0.9, friction: 0, frictionStatic: 0 });
     gfx.fillStyle(0xcc2255); gfx.fillCircle(x, y, r);
     gfx.lineStyle(3, 0xff4488, 0.9); gfx.strokeCircle(x, y, r);
-    // Halo lumineux
-    gfx.lineStyle(6, 0xff4488, 0.25); gfx.strokeCircle(x, y, r + 5);
+    gfx.lineStyle(8, 0xff4488, 0.2); gfx.strokeCircle(x, y, r + 7);
+  }
+}
+
+// Section 5 — Zigzag serré + rangée de pegs alternée
+function addZigzagTightSection(scene, gfx, startY, height) {
+  const count = 5;
+  const spacing = height / (count * 2);
+  for (let i = 0; i < count; i++) {
+    const y = startY + (i * 2 + 1) * spacing;
+    const fromLeft = i % 2 === 0;
+    const rampW = 310;
+    const cx = fromLeft ? 24 + rampW / 2 : W - 24 - rampW / 2;
+    addRamp(scene, gfx, cx, y, rampW, 14, fromLeft ? 16 : -16, 0x2244aa);
+    // Rangée de 3 pegs au milieu entre deux rampes
+    const pegY = y + spacing * 0.8;
+    for (let p = 0; p < 3; p++) {
+      const px = W * (0.25 + p * 0.25);
+      scene.matter.add.circle(px, pegY, 6, { isStatic: true, restitution: 0.45, friction: 0, frictionStatic: 0 });
+      gfx.fillStyle(0x5566cc); gfx.fillCircle(px, pegY, 6);
+    }
   }
 }
 
 function addRamp(scene, gfx, cx, cy, w, h, deg, color) {
   const rad = Phaser.Math.DegToRad(deg);
-  scene.matter.add.rectangle(cx, cy, w, h, { isStatic: true, angle: rad, friction: 0, restitution: 0.1, frictionStatic: 0 });
+  // friction:0 + frictionStatic:0 → les billes glissent sans perdre de vitesse sur les rampes
+  scene.matter.add.rectangle(cx, cy, w, h, { isStatic: true, angle: rad, friction: 0, restitution: 0.05, frictionStatic: 0 });
   gfx.fillStyle(color);
   gfx.fillPoints(rotatedCorners(cx, cy, w, h, rad), true);
 }
