@@ -233,8 +233,10 @@ function update(time) {
     lastSpawnTime = time;
   }
 
-  // Rotation des palettes
+  // Rotation des palettes — setAngularVelocity nécessaire pour que Matter
+  // calcule correctement les collisions (sinon les billes se figent dessus)
   for (const s of spinners) {
+    MBody.setAngularVelocity(s.body, s.speed);
     MBody.setAngle(s.body, s.body.angle + s.speed);
     s.visual.setRotation(s.body.angle);
   }
@@ -255,6 +257,21 @@ function update(time) {
       const spd = Math.sqrt(vx * vx + vy * vy);
       if (spd > MAX_SPEED) {
         MBody.setVelocity(m.body, { x: vx * MAX_SPEED / spd, y: vy * MAX_SPEED / spd });
+      }
+
+      // Anti-stuck : si la bille n'a pas bougé de 8px en ~2s → impulsion aléatoire vers le bas
+      if (m._stuckFrames === undefined) { m._stuckFrames = 0; m._lastCheck = { x, y }; }
+      m._stuckFrames++;
+      if (m._stuckFrames >= 120) {
+        const ddx = x - m._lastCheck.x, ddy = y - m._lastCheck.y;
+        if (ddx * ddx + ddy * ddy < 64) {
+          MBody.applyForce(m.body, m.body.position, {
+            x: (Math.random() - 0.5) * 0.018,
+            y: 0.01,
+          });
+        }
+        m._stuckFrames = 0;
+        m._lastCheck = { x, y };
       }
     }
   }
