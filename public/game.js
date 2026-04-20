@@ -239,11 +239,27 @@ function update(time) {
 
   const camY = _scene.cameras.main.scrollY;
 
-  // Mise à jour position des sprites
+  // Mise à jour position + anti-stuck discret
   for (const m of marbles) {
     const { x, y } = m.body.position;
     const inView = y >= camY - 150 && y <= camY + H + 150;
     m.img.setPosition(x, y).setVisible(inView);
+
+    if (!m.finished) {
+      const { x: vx, y: vy } = m.body.velocity;
+      if (Math.abs(vx) + Math.abs(vy) < 0.5) {
+        m.stuckFrames = (m.stuckFrames || 0) + 1;
+        if (m.stuckFrames > 120) { // ~2s à 60fps
+          MBody.applyForce(m.body, m.body.position, {
+            x: (Math.random() - 0.5) * 0.003,
+            y: 0.005,
+          });
+          m.stuckFrames = 0;
+        }
+      } else {
+        m.stuckFrames = 0;
+      }
+    }
   }
 
   // Caméra : suit le leader avant la 1ère arrivée, fige sur la finish ensuite
