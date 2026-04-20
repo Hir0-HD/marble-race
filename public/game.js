@@ -47,7 +47,7 @@ const config = {
   physics: {
     default: 'matter',
     matter: {
-      gravity: { y: 1.3 },
+      gravity: { y: 0.9 },
       debug: false,
       positionIterations: 12,
       velocityIterations: 8,
@@ -461,12 +461,15 @@ function addBowl(scene, gfx, cx, cy, r, gapW) {
   }
 }
 
-// Section bols : 3 bols empilés avec décalage horizontal alterné
+// Section bols : 3 bols empilés, toujours décalés gauche/droite (jamais centré)
+// Le gap n'est JAMAIS au centre (x=270) pour forcer les billes à dévier
 function addBowlSection(scene, gfx, startY, height, shift) {
-  const r = 200, gapW = 75;
+  const r = 160, gapW = 50;
   const spacing = height / 3.5;
+  // shift=+1 → 1er bol à gauche, -1 → 1er bol à droite
+  const dir = shift >= 0 ? 1 : -1;
   for (let i = 0; i < 3; i++) {
-    const cx = W / 2 + (i % 2 === 0 ? shift : -shift);
+    const cx = W / 2 + (i % 2 === 0 ? -dir * 70 : dir * 70);
     const cy = startY + (i + 0.8) * spacing;
     addBowl(scene, gfx, cx, cy, r, gapW);
   }
